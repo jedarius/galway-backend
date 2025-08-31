@@ -1,559 +1,367 @@
-// src/routes/auth.js
-// Complete Authentication routes - registration, login, password management
-
+// routes/auth.js - Fixed Enhanced Authentication with JWT
 const express = require('express');
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const { PrismaClient } = require('@prisma/client');
 const { body, validationResult } = require('express-validator');
-
-const { requireAuth, sensitiveOperationLimit } = require('../middleware/auth');
+const { PrismaClient } = require('@prisma/client');
+const JWTService = require('../utils/jwt');
+const AuthMiddleware = require('../middleware/auth');
+const { ResponseWrapper, ValidationError, UnauthorizedError, ConflictError } = require('../middleware/errorHandler');
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Custom error classes (inline since we can't import them easily)
-class ValidationError extends Error {
-  constructor(message, details = null) {
-    super(message);
-    this.statusCode = 400;
-    this.code = 'VALIDATION_ERROR';
-    this.details = details;
-  }
-}
+console.log('🔐 Enhanced Authentication routes loaded!');
 
-class UnauthorizedError extends Error {
-  constructor(message = 'Unauthorized access') {
-    super(message);
-    this.statusCode = 401;
-    this.code = 'UNAUTHORIZED';
-  }
-}
+// Store refresh tokens (in production, use Redis or database)
+const refreshTokenStore = new Map();
 
-class ConflictError extends Error {
-  constructor(message = 'Resource conflict') {
-    super(message);
-    this.statusCode = 409;
-    this.code = 'CONFLICT';
-  }
-}
-
-class ForbiddenError extends Error {
-  constructor(message = 'Access forbidden') {
-    super(message);
-    this.statusCode = 403;
-    this.code = 'FORBIDDEN';
-  }
-}
-
-// Validation schemas
-const registerValidation = [
-  body('username')
-    .isLength({ min: 3, max: 20 })
-    .matches(/^[a-z0-9._]+$/)
-    .withMessage('Username must be 3-20 characters, lowercase letters, numbers, dots, and underscores only'),
-  body('email')
-    .isEmail()
-    .normalizeEmail()
-    .withMessage('Please provide a valid email address'),
-  body('password')
-    .isLength({ min: 8 })
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-    .withMessage('Password must be at least 8 characters with uppercase, lowercase, and number'),
-];
-
-const loginValidation = [
-  body('email').isEmail().normalizeEmail(),
-  body('password').notEmpty(),
-];
-
-// Helper function to generate unique ID number
-const generateIdNo = async () => {
-  let idNo;
-  let isUnique = false;
-  
-  while (!isUnique) {
-    idNo = Math.floor(100000 + Math.random() * 900000).toString();
-    const existing = await prisma.user.findUnique({
-      where: { idNo },
-    });
-    isUnique = !existing;
-  }
-  
-  return idNo;
-};
-
-// Helper function to create JWT token
-const createToken = (userId) => {
-  return jwt.sign(
-    { userId },
-    process.env.JWT_SECRET,
-    { expiresIn: '7d' }
-  );
+// Helper function to generate ID number (from your existing system)
+const generateIdNo = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
 // POST /api/auth/register - User registration
-router.post('/register', registerValidation, async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      throw new ValidationError('Validation failed', errors.array());
-    }
-
-    const { username, email, password, referralCode } = req.body;
-
-    // Check if registration is enabled
-    const registrationEnabled = await prisma.siteConfig.findUnique({
-      where: { key: 'registration_enabled' },
-    });
-
-    if (!registrationEnabled?.value) {
-      throw new ForbiddenError('Registration is currently disabled');
-    }
-
-    // Check for existing user
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { username },
-          { email },
-        ],
-      },
-    });
-
-    if (existingUser) {
-      if (existingUser.username === username) {
-        throw new ConflictError('Username already taken');
+router.post('/register',
+  [
+    body('username').isLength({ min: 3, max: 20 }).withMessage('Username must be 3-20 characters')
+      .matches(/^[a-zA-Z0-9_]+$/).withMessage('Username can only contain letters, numbers, and underscores'),
+    body('email').isEmail().withMessage('Valid email required'),
+    body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must contain uppercase, lowercase, and number'),
+    body('country').optional().isLength({ min: 1, max: 4 }).withMessage('Country must be 1-4 characters')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        throw new ValidationError('Registration validation failed', errors.array());
       }
-      if (existingUser.email === email) {
-        throw new ConflictError('Email already registered');
-      }
-    }
 
-    // Hash password
-    const passwordHash = await bcrypt.hash(password, parseInt(process.env.BCRYPT_ROUNDS) || 12);
+      const { username, email, password, country } = req.body;
 
-    // Generate unique ID number
-    const idNo = await generateIdNo();
-
-    // Generate email verification token
-    const emailVerificationToken = crypto.randomBytes(16).toString('hex');
-
-    // Handle referral code if provided
-    let referralCodeRecord = null;
-    if (referralCode) {
-      referralCodeRecord = await prisma.referralCode.findUnique({
-        where: { code: referralCode, isActive: true },
-        include: { user: true },
+      // FIXED: Check for existing user (users not user)
+      const existingUser = await prisma.users.findFirst({
+        where: {
+          OR: [
+            { username },
+            { email }
+          ]
+        }
       });
 
-      if (!referralCodeRecord || 
-          (referralCodeRecord.maxUses && referralCodeRecord.currentUses >= referralCodeRecord.maxUses) ||
-          (referralCodeRecord.expiresAt && new Date() > referralCodeRecord.expiresAt)) {
-        throw new ValidationError('Invalid or expired referral code');
+      if (existingUser) {
+        throw new ConflictError(
+          existingUser.username === username ? 'Username already exists' : 'Email already registered'
+        );
       }
-    }
 
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        username,
-        email,
-        passwordHash,
-        idNo,
-        emailVerificationToken,
-        verificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
-      },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        idNo: true,
-        role: true,
-        emailVerified: true,
-        createdAt: true,
-      },
-    });
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create referral relationship if applicable
-    if (referralCodeRecord) {
-      await prisma.referral.create({
+      // Generate unique ID number
+      let idNo;
+      let isUnique = false;
+      while (!isUnique) {
+        idNo = generateIdNo();
+        const existingId = await prisma.users.findUnique({ where: { id_no: idNo } });
+        isUnique = !existingId;
+      }
+
+      // FIXED: Create user (users not user, proper field names)
+      const user = await prisma.users.create({
         data: {
-          referrerId: referralCodeRecord.userId,
-          refereeId: user.id,
-          referralCodeId: referralCodeRecord.id,
-          signupCompleted: true,
-          convertedAt: new Date(),
+          username,
+          email,
+          password_hash: hashedPassword,
+          id_no: idNo,
+          country: country || null,
+          role: 'operative', // Default role
+          created_at: new Date(),
+          updated_at: new Date()
         },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          role: true,
+          id_no: true,
+          created_at: true
+        }
       });
 
-      // Update referral code usage
-      await prisma.referralCode.update({
-        where: { id: referralCodeRecord.id },
-        data: { currentUses: { increment: 1 } },
+      // FIXED: Generate initial inventory (inventory_items not inventoryItem)
+      await prisma.inventory_items.create({
+        data: {
+          user_id: user.id,
+          item_type: 'seed',
+          quantity: 3,
+          source_type: 'awarded',
+          source_reference: 'new_user_bonus',
+          grid_position: 0,
+          created_at: new Date()
+        }
       });
-    }
 
-    // Create initial inventory (starter seeds)
-    await prisma.inventoryItem.create({
-      data: {
+      // Generate tokens
+      const tokens = JWTService.generateTokens(user);
+
+      // Store refresh token
+      refreshTokenStore.set(tokens.refreshToken, {
         userId: user.id,
-        itemType: 'seed',
-        quantity: 3, // Start with 3 seeds
-        sourceType: 'registration_bonus',
-        gridPosition: 0,
-      },
-    });
-
-    // Generate JWT token
-    const token = createToken(user.id);
-
-    // TODO: Send verification email
-    console.log(`Verification token for ${email}: ${emailVerificationToken}`);
-
-    res.status(201).json({
-      message: 'Registration successful',
-      user,
-      token,
-      requiresEmailVerification: true,
-    });
-
-  } catch (error) {
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({
-        error: error.message,
-        code: error.code,
-        details: error.details || null,
+        createdAt: new Date(),
+        lastUsed: new Date()
       });
+
+      return ResponseWrapper.created(res, {
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          idNo: user.id_no,
+          joinedDate: user.created_at
+        },
+        tokens: {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresIn: tokens.expiresIn
+        },
+        bonuses: {
+          welcomeSeeds: 3,
+          message: 'Welcome to Galway Research! You\'ve received 3 seeds to start growing olive branches.'
+        }
+      }, 'Registration successful');
+    } catch (error) {
+      next(error);
     }
-    next(error);
   }
-});
+);
 
 // POST /api/auth/login - User login
-router.post('/login', loginValidation, async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      throw new ValidationError('Validation failed', errors.array());
-    }
-
-    const { email, password } = req.body;
-
-    // Find user by email
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (!user) {
-      throw new UnauthorizedError('Invalid email or password');
-    }
-
-    // Check if account is locked
-    if (user.lockedUntil && new Date() < user.lockedUntil) {
-      throw new UnauthorizedError('Account is temporarily locked due to failed login attempts');
-    }
-
-    // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
-
-    if (!isValidPassword) {
-      // Increment failed login attempts
-      const updatedUser = await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          failedLoginAttempts: { increment: 1 },
-          ...(user.failedLoginAttempts >= 4 && {
-            lockedUntil: new Date(Date.now() + 30 * 60 * 1000), // Lock for 30 minutes
-          }),
-        },
-      });
-
-      if (updatedUser.failedLoginAttempts >= 5) {
-        throw new UnauthorizedError('Account locked due to too many failed login attempts');
+router.post('/login',
+  [
+    body('identifier').notEmpty().withMessage('Username or email required'),
+    body('password').notEmpty().withMessage('Password required'),
+    body('remember').optional().isBoolean().withMessage('Remember must be boolean')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        throw new ValidationError('Login validation failed', errors.array());
       }
 
-      throw new UnauthorizedError('Invalid email or password');
-    }
+      const { identifier, password, remember = false } = req.body;
 
-    // Reset failed login attempts on successful login
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        failedLoginAttempts: 0,
-        lockedUntil: null,
-        lastLogin: new Date(),
-      },
-    });
-
-    // Generate JWT token
-    const token = createToken(user.id);
-
-    // Return user data (excluding sensitive information)
-    const userData = {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      idNo: user.idNo,
-      role: user.role,
-      emailVerified: user.emailVerified,
-      createdAt: user.createdAt,
-    };
-
-    res.json({
-      message: 'Login successful',
-      user: userData,
-      token,
-    });
-
-  } catch (error) {
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({
-        error: error.message,
-        code: error.code,
-      });
-    }
-    next(error);
-  }
-});
-
-// POST /api/auth/verify-email - Verify email address
-router.post('/verify-email', async (req, res, next) => {
-  try {
-    const { token } = req.body;
-
-    if (!token) {
-      throw new ValidationError('Verification token is required');
-    }
-
-    const user = await prisma.user.findFirst({
-      where: {
-        emailVerificationToken: token,
-        verificationExpiresAt: {
-          gt: new Date(),
+      // FIXED: Find user by username or email (users not user)
+      const user = await prisma.users.findFirst({
+        where: {
+          OR: [
+            { username: identifier },
+            { email: identifier }
+          ]
         },
-      },
-    });
-
-    if (!user) {
-      throw new UnauthorizedError('Invalid or expired verification token');
-    }
-
-    // Update user as verified
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        emailVerified: true,
-        emailVerificationToken: null,
-        verificationExpiresAt: null,
-      },
-    });
-
-    res.json({
-      message: 'Email verified successfully',
-    });
-
-  } catch (error) {
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({
-        error: error.message,
-        code: error.code,
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          password_hash: true,
+          role: true,
+          created_at: true,
+          active_olive_branch_id: true
+        }
       });
-    }
-    next(error);
-  }
-});
 
-// POST /api/auth/resend-verification - Resend verification email
-router.post('/resend-verification', requireAuth, sensitiveOperationLimit, async (req, res, next) => {
-  try {
-    if (req.user.emailVerified) {
-      throw new ValidationError('Email is already verified');
-    }
+      if (!user) {
+        throw new UnauthorizedError('Invalid credentials');
+      }
 
-    // Generate new verification token
-    const emailVerificationToken = crypto.randomBytes(16).toString('hex');
+      // FIXED: Verify password (password_hash not password)
+      const isValidPassword = await bcrypt.compare(password, user.password_hash);
+      if (!isValidPassword) {
+        throw new UnauthorizedError('Invalid credentials');
+      }
 
-    await prisma.user.update({
-      where: { id: req.user.id },
-      data: {
-        emailVerificationToken,
-        verificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
-      },
-    });
-
-    // TODO: Send verification email
-    console.log(`New verification token for ${req.user.email}: ${emailVerificationToken}`);
-
-    res.json({
-      message: 'Verification email sent',
-    });
-
-  } catch (error) {
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({
-        error: error.message,
-        code: error.code,
+      // Update user timestamp
+      await prisma.users.update({
+        where: { id: user.id },
+        data: { updated_at: new Date() }
       });
-    }
-    next(error);
-  }
-});
 
-// POST /api/auth/forgot-password - Request password reset
-router.post('/forgot-password', sensitiveOperationLimit, async (req, res, next) => {
-  try {
-    const { email } = req.body;
+      // Generate tokens
+      const tokens = JWTService.generateTokens(user);
 
-    if (!email) {
-      throw new ValidationError('Email is required');
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (!user) {
-      // Return success even if user doesn't exist (security best practice)
-      return res.json({
-        message: 'If an account with this email exists, a reset link has been sent',
-      });
-    }
-
-    // Generate password reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-
-    await prisma.accountRecovery.create({
-      data: {
+      // Store refresh token
+      refreshTokenStore.set(tokens.refreshToken, {
         userId: user.id,
-        recoveryType: 'email',
-        recoveryToken: resetToken,
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent'),
-      },
-    });
-
-    // TODO: Send password reset email
-    console.log(`Password reset token for ${email}: ${resetToken}`);
-
-    res.json({
-      message: 'If an account with this email exists, a reset link has been sent',
-    });
-
-  } catch (error) {
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({
-        error: error.message,
-        code: error.code,
+        createdAt: new Date(),
+        lastUsed: new Date(),
+        extended: remember
       });
+
+      // Remove password from response
+      const { password_hash: _, ...userResponse } = user;
+
+      return ResponseWrapper.success(res, {
+        user: userResponse,
+        tokens: {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresIn: tokens.expiresIn
+        },
+        session: {
+          loginTime: new Date().toISOString(),
+          rememberMe: remember
+        }
+      }, 'Login successful');
+    } catch (error) {
+      next(error);
     }
-    next(error);
   }
-});
+);
 
-// POST /api/auth/reset-password - Reset password with token
-router.post('/reset-password', async (req, res, next) => {
-  try {
-    const { token, newPassword } = req.body;
+// POST /api/auth/refresh - Refresh access token
+router.post('/refresh',
+  [
+    body('refreshToken').notEmpty().withMessage('Refresh token required')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        throw new ValidationError('Refresh validation failed', errors.array());
+      }
 
-    if (!token || !newPassword) {
-      throw new ValidationError('Token and new password are required');
-    }
+      const { refreshToken } = req.body;
 
-    // Validate password strength
-    if (newPassword.length < 8 || !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(newPassword)) {
-      throw new ValidationError('Password must be at least 8 characters with uppercase, lowercase, and number');
-    }
+      // Verify refresh token
+      let decoded;
+      try {
+        decoded = JWTService.verifyRefreshToken(refreshToken);
+      } catch (error) {
+        throw new UnauthorizedError('Invalid refresh token');
+      }
 
-    // Find valid recovery token
-    const recovery = await prisma.accountRecovery.findFirst({
-      where: {
-        recoveryToken: token,
-        isUsed: false,
-        expiresAt: {
-          gt: new Date(),
-        },
-      },
-      include: {
-        user: true,
-      },
-    });
+      // Check if refresh token is stored and valid
+      const storedToken = refreshTokenStore.get(refreshToken);
+      if (!storedToken || storedToken.userId !== decoded.userId) {
+        throw new UnauthorizedError('Refresh token not found');
+      }
 
-    if (!recovery) {
-      throw new UnauthorizedError('Invalid or expired reset token');
-    }
-
-    // Hash new password
-    const passwordHash = await bcrypt.hash(newPassword, parseInt(process.env.BCRYPT_ROUNDS) || 12);
-
-    // Update user password and mark recovery as used
-    await prisma.$transaction([
-      prisma.user.update({
-        where: { id: recovery.userId },
-        data: {
-          passwordHash,
-          failedLoginAttempts: 0,
-          lockedUntil: null,
-        },
-      }),
-      prisma.accountRecovery.update({
-        where: { id: recovery.id },
-        data: {
-          isUsed: true,
-          usedAt: new Date(),
-        },
-      }),
-    ]);
-
-    res.json({
-      message: 'Password reset successfully',
-    });
-
-  } catch (error) {
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({
-        error: error.message,
-        code: error.code,
+      // FIXED: Get fresh user data (users not user)
+      const user = await prisma.users.findUnique({
+        where: { id: decoded.userId },
+        select: {
+          id: true,
+          username: true,
+          role: true,
+          active_olive_branch_id: true
+        }
       });
+
+      if (!user) {
+        throw new UnauthorizedError('User not found or inactive');
+      }
+
+      // Generate new tokens
+      const newTokens = JWTService.generateTokens(user);
+
+      // Remove old refresh token and store new one
+      refreshTokenStore.delete(refreshToken);
+      refreshTokenStore.set(newTokens.refreshToken, {
+        userId: user.id,
+        createdAt: new Date(),
+        lastUsed: new Date(),
+        extended: storedToken.extended
+      });
+
+      return ResponseWrapper.success(res, {
+        tokens: {
+          accessToken: newTokens.accessToken,
+          refreshToken: newTokens.refreshToken,
+          expiresIn: newTokens.expiresIn
+        },
+        user: {
+          username: user.username,
+          role: user.role
+        }
+      }, 'Token refreshed successfully');
+    } catch (error) {
+      next(error);
     }
-    next(error);
   }
-});
+);
 
 // GET /api/auth/me - Get current user info
-router.get('/me', requireAuth, async (req, res) => {
-  res.json({
-    user: req.user,
-  });
-});
+router.get('/me',
+  AuthMiddleware.requireAuth,
+  async (req, res, next) => {
+    try {
+      // FIXED: users not user
+      const user = await prisma.users.findUnique({
+        where: { id: req.user.id },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          role: true,
+          country: true,
+          created_at: true,
+          active_olive_branch_id: true
+        }
+      });
 
-// POST /api/auth/logout - Logout (client-side token invalidation)
-router.post('/logout', requireAuth, async (req, res) => {
-  // In a more sophisticated setup, you might maintain a token blacklist
-  // For now, logout is handled client-side by removing the token
-  res.json({
-    message: 'Logged out successfully',
-  });
-});
+      if (!user) {
+        throw new UnauthorizedError('User not found');
+      }
 
-// GET /api/auth/test - Keep the test endpoint for verification
-router.get('/test', (req, res) => {
-  res.json({
-    message: 'Complete auth system loaded!',
-    timestamp: new Date().toISOString(),
-    availableEndpoints: [
-      'POST /api/auth/register',
-      'POST /api/auth/login', 
-      'POST /api/auth/verify-email',
-      'POST /api/auth/resend-verification',
-      'POST /api/auth/forgot-password',
-      'POST /api/auth/reset-password',
-      'GET /api/auth/me',
-      'POST /api/auth/logout'
-    ]
-  });
-});
+      return ResponseWrapper.success(res, {
+        user: {
+          ...user,
+          permissions: req.user.permissions
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/auth/logout - User logout
+router.post('/logout',
+  AuthMiddleware.requireAuth,
+  [
+    body('refreshToken').optional().isString().withMessage('Refresh token must be string'),
+    body('allDevices').optional().isBoolean().withMessage('allDevices must be boolean')
+  ],
+  async (req, res, next) => {
+    try {
+      const { refreshToken, allDevices = false } = req.body;
+      const userId = req.user.id;
+
+      if (allDevices) {
+        // Remove all refresh tokens for this user
+        const tokensToDelete = [];
+        for (const [token, data] of refreshTokenStore.entries()) {
+          if (data.userId === userId) {
+            tokensToDelete.push(token);
+          }
+        }
+        tokensToDelete.forEach(token => refreshTokenStore.delete(token));
+      } else if (refreshToken) {
+        // Remove specific refresh token
+        refreshTokenStore.delete(refreshToken);
+      }
+
+      return ResponseWrapper.success(res, {
+        loggedOut: true,
+        allDevices,
+        message: allDevices ? 'Logged out from all devices' : 'Logged out successfully'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 module.exports = router;

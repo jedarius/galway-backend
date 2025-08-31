@@ -1,7 +1,6 @@
-// middleware/errorHandler.js - Fixed version without database calls
+// utils/responseWrapper.js - Standardized API Responses
 const { v4: uuidv4 } = require('uuid');
 
-// Response Wrapper Class
 class ResponseWrapper {
   static success(res, data, message = 'Operation completed successfully', statusCode = 200) {
     const response = {
@@ -97,7 +96,9 @@ class ResponseWrapper {
   }
 }
 
-// Custom error classes
+// middleware/errorHandler.js - Enhanced Error Handler
+const ResponseWrapper = require('./responseWrapper');
+
 class AppError extends Error {
   constructor(message, statusCode = 500, code = 'INTERNAL_SERVER_ERROR', details = {}) {
     super(message);
@@ -105,45 +106,15 @@ class AppError extends Error {
     this.code = code;
     this.details = details;
     this.isOperational = true;
+
     Error.captureStackTrace(this, this.constructor);
   }
 }
 
-class ValidationError extends AppError {
-  constructor(message, details = {}) {
-    super(message, 422, 'VALIDATION_ERROR', details);
-  }
-}
-
-class NotFoundError extends AppError {
-  constructor(message = 'Resource not found') {
-    super(message, 404, 'NOT_FOUND');
-  }
-}
-
-class ForbiddenError extends AppError {
-  constructor(message = 'Access forbidden') {
-    super(message, 403, 'FORBIDDEN');
-  }
-}
-
-class UnauthorizedError extends AppError {
-  constructor(message = 'Authentication required') {
-    super(message, 401, 'UNAUTHORIZED');
-  }
-}
-
-class ConflictError extends AppError {
-  constructor(message = 'Resource conflict') {
-    super(message, 409, 'CONFLICT');
-  }
-}
-
-// Error Handler Middleware - SIMPLIFIED without database calls
 const errorHandler = (error, req, res, next) => {
   // Set request ID for tracking
   if (!res.locals.requestId) {
-    res.locals.requestId = req.headers['x-request-id'] || uuidv4();
+    res.locals.requestId = req.headers['x-request-id'] || require('uuid').v4();
   }
 
   console.error(`[${res.locals.requestId}] Error:`, {
@@ -216,9 +187,40 @@ const errorHandler = (error, req, res, next) => {
   );
 };
 
+// Custom error classes for common scenarios
+class ValidationError extends AppError {
+  constructor(message, details = {}) {
+    super(message, 422, 'VALIDATION_ERROR', details);
+  }
+}
+
+class NotFoundError extends AppError {
+  constructor(message = 'Resource not found') {
+    super(message, 404, 'NOT_FOUND');
+  }
+}
+
+class ForbiddenError extends AppError {
+  constructor(message = 'Access forbidden') {
+    super(message, 403, 'FORBIDDEN');
+  }
+}
+
+class UnauthorizedError extends AppError {
+  constructor(message = 'Authentication required') {
+    super(message, 401, 'UNAUTHORIZED');
+  }
+}
+
+class ConflictError extends AppError {
+  constructor(message = 'Resource conflict') {
+    super(message, 409, 'CONFLICT');
+  }
+}
+
 // Request ID middleware
 const requestIdMiddleware = (req, res, next) => {
-  const requestId = req.headers['x-request-id'] || uuidv4();
+  const requestId = req.headers['x-request-id'] || require('uuid').v4();
   res.locals.requestId = requestId;
   res.set('X-Request-ID', requestId);
   next();
