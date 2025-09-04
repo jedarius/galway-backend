@@ -1,0 +1,1243 @@
+// This file has been merged with Phase 4 E-Commerce System
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model account_recovery {
+  id             Int                 @id @default(autoincrement())
+  user_id        Int
+  recovery_type  RecoveryMethodType
+  recovery_token String              @db.VarChar(255)
+  recovery_data  Json?
+  is_used        Boolean             @default(false)
+  expires_at     DateTime
+  used_at        DateTime?
+  ip_address     String?
+  user_agent     String?
+  created_at     DateTime            @default(now())
+  users          users               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model achievements {
+  id                 Int                  @id @default(autoincrement())
+  name               String               @db.VarChar(100)
+  description        String
+  badge_icon         String?              @db.VarChar(100)
+  category           AchievementCategory
+  criteria           Json
+  reward_type        RewardType?
+  reward_value       Int?
+  is_active          Boolean              @default(true)
+  is_hidden          Boolean              @default(false)
+  sort_order         Int                  @default(0)
+  created_at         DateTime             @default(now())
+  user_achievements  user_achievements[]
+}
+
+model activity_comments {
+  id            Int           @id @default(autoincrement())
+  activity_id   Int
+  user_id       Int
+  content       String
+  created_at    DateTime      @default(now())
+  activity_feed activity_feed @relation(fields: [activity_id], references: [id], onDelete: Cascade)
+  users         users         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model activity_feed {
+  id                 Int                 @id @default(autoincrement())
+  user_id            Int
+  activity_type      ActivityType
+  title              String              @db.VarChar(200)
+  description        String?
+  reference_type     String?             @db.VarChar(50)
+  reference_id       Int?
+  reference_data     Json?
+  is_public          Boolean             @default(true)
+  like_count         Int                 @default(0)
+  comment_count      Int                 @default(0)
+  created_at         DateTime            @default(now())
+  activity_comments  activity_comments[]
+  users              users               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  activity_likes     activity_likes[]
+}
+
+model activity_likes {
+  id            Int           @id @default(autoincrement())
+  activity_id   Int
+  user_id       Int
+  created_at    DateTime      @default(now())
+  activity_feed activity_feed @relation(fields: [activity_id], references: [id], onDelete: Cascade)
+  users         users         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([activity_id, user_id])
+}
+
+model admin_logs {
+  id          Int      @id @default(autoincrement())
+  admin_id    Int
+  action      String   @db.VarChar(100)
+  target_type String?  @db.VarChar(50)
+  target_id   Int?
+  old_values  Json?
+  new_values  Json?
+  notes       String?
+  ip_address  String?
+  user_agent  String?
+  created_at  DateTime @default(now())
+  users       users    @relation(fields: [admin_id], references: [id])
+}
+
+model analytics_events {
+  id           Int      @id @default(autoincrement())
+  event_type   String   @db.VarChar(100)
+  event_category String @db.VarChar(50)
+  event_data   Json?
+  user_id      Int?
+  session_id   String?  @db.VarChar(100)
+  ip_address   String?
+  user_agent   String?
+  referrer     String?
+  created_at   DateTime @default(now())
+  users        users?   @relation(fields: [user_id], references: [id])
+}
+
+model analytics_user_metrics {
+  id                       Int      @id @default(autoincrement())
+  user_id                  Int
+  metric_date              DateTime @db.Date
+  metric_type              String   @db.VarChar(50)
+  session_count            Int      @default(0)
+  session_duration_minutes Int      @default(0)
+  page_views               Int      @default(0)
+  trades_initiated         Int      @default(0)
+  trades_completed         Int      @default(0)
+  trade_volume_cents       Int      @default(0)
+  branches_generated       Int      @default(0)
+  seeds_planted            Int      @default(0)
+  achievements_unlocked    Int      @default(0)
+  forum_posts              Int      @default(0)
+  messages_sent            Int      @default(0)
+  follows_gained           Int      @default(0)
+  created_at               DateTime @default(now())
+  users                    users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, metric_date, metric_type])
+}
+
+model daily_rewards {
+  id               Int     @id @default(autoincrement())
+  day_number       Int
+  reward_type      RewardType
+  reward_amount    Int
+  is_bonus_day     Boolean @default(false)
+  bonus_multiplier Decimal @default(1.0) @db.Decimal(3, 2)
+  requires_consecutive Boolean @default(true)
+  is_active        Boolean @default(true)
+  created_at       DateTime @default(now())
+}
+
+model early_access_features {
+  id                    Int                    @id @default(autoincrement())
+  name                  String                 @db.VarChar(100)
+  description           String?
+  min_tier_required     Int?
+  invited_users_only    Boolean                @default(false)
+  is_active             Boolean                @default(true)
+  rollout_percentage    Int                    @default(0)
+  created_at            DateTime               @default(now())
+  launched_at           DateTime?
+  subscription_tiers    subscription_tiers?    @relation(fields: [min_tier_required], references: [id])
+  user_early_access     user_early_access[]
+}
+
+model forum_categories {
+  id              Int             @id @default(autoincrement())
+  name            String          @db.VarChar(100)
+  description     String?
+  sort_order      Int             @default(0)
+  is_active       Boolean         @default(true)
+  min_role_to_view UserRole       @default(operative)
+  min_role_to_post UserRole       @default(operative)
+  created_at      DateTime        @default(now())
+  forum_threads   forum_threads[]
+}
+
+model forum_posts {
+  id                                      Int            @id @default(autoincrement())
+  thread_id                               Int
+  content                                 String
+  author_id                               Int
+  is_first_post                           Boolean        @default(false)
+  is_deleted                              Boolean        @default(false)
+  edited_at                               DateTime?
+  edited_by                               Int?
+  is_reported                             Boolean        @default(false)
+  report_count                            Int            @default(0)
+  created_at                              DateTime       @default(now())
+  users_forum_posts_author_idTousers      users          @relation("forum_posts_author_idTousers", fields: [author_id], references: [id])
+  users_forum_posts_edited_byTousers      users?         @relation("forum_posts_edited_byTousers", fields: [edited_by], references: [id])
+  forum_threads                           forum_threads  @relation(fields: [thread_id], references: [id], onDelete: Cascade)
+}
+
+model forum_threads {
+  id                                        Int             @id @default(autoincrement())
+  category_id                               Int
+  title                                     String          @db.VarChar(200)
+  slug                                      String          @unique @db.VarChar(250)
+  author_id                                 Int
+  is_pinned                                 Boolean         @default(false)
+  is_locked                                 Boolean         @default(false)
+  is_deleted                                Boolean         @default(false)
+  reply_count                               Int             @default(0)
+  last_activity_at                          DateTime        @default(now())
+  last_reply_by                             Int?
+  created_at                                DateTime        @default(now())
+  updated_at                                DateTime        @default(now())
+  forum_posts                               forum_posts[]
+  users_forum_threads_author_idTousers      users           @relation("forum_threads_author_idTousers", fields: [author_id], references: [id])
+  forum_categories                          forum_categories @relation(fields: [category_id], references: [id])
+  users_forum_threads_last_reply_byTousers  users?          @relation("forum_threads_last_reply_byTousers", fields: [last_reply_by], references: [id])
+}
+
+model inventory_items {
+  id               Int              @id @default(autoincrement())
+  user_id          Int
+  item_type        ItemType
+  item_id          Int?
+  quantity         Int              @default(1)
+  source_type      String           @db.VarChar(20)
+  source_reference String?          @db.VarChar(50)
+  grid_position    Int?
+  created_at       DateTime         @default(now())
+  olive_branches   olive_branches?  @relation(fields: [item_id], references: [id])
+  users            users            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  trades           trades[]
+
+  @@unique([user_id, grid_position])
+}
+
+model ip_blocks {
+  id             Int       @id @default(autoincrement())
+  ip_address     String
+  block_type     BlockType
+  reason         String
+  blocked_until  DateTime?
+  blocked_by     Int?
+  auto_generated Boolean   @default(false)
+  created_at     DateTime  @default(now())
+  users          users?    @relation(fields: [blocked_by], references: [id])
+}
+
+model leaderboard_entries {
+  id             Int          @id @default(autoincrement())
+  leaderboard_id Int
+  user_id        Int
+  rank_position  Int
+  score          Decimal      @db.Decimal(12, 2)
+  score_data     Json?
+  period_start   DateTime     @db.Date
+  period_end     DateTime     @db.Date
+  updated_at     DateTime     @default(now())
+  leaderboards   leaderboards @relation(fields: [leaderboard_id], references: [id], onDelete: Cascade)
+  users          users        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([leaderboard_id, user_id, period_start])
+}
+
+model leaderboards {
+  id                  Int                   @id @default(autoincrement())
+  name                String                @db.VarChar(100)
+  description         String?
+  category            LeaderboardCategory
+  scoring_method      String                @db.VarChar(50)
+  time_period         LeaderboardPeriod
+  max_entries         Int                   @default(100)
+  is_active           Boolean               @default(true)
+  is_featured         Boolean               @default(false)
+  created_at          DateTime              @default(now())
+  leaderboard_entries leaderboard_entries[]
+}
+
+model moderation_queue {
+  id                                        Int                @id @default(autoincrement())
+  content_type                              String             @db.VarChar(50)
+  content_id                                Int
+  content_text                              String?
+  user_id                                   Int
+  triggered_rule_id                         Int?
+  severity                                  ModerationSeverity
+  auto_flagged                              Boolean            @default(false)
+  status                                    ModerationStatus   @default(pending)
+  reviewed_by                               Int?
+  review_notes                              String?
+  action_taken                              ModerationAction?
+  created_at                                DateTime           @default(now())
+  reviewed_at                               DateTime?
+  users_moderation_queue_reviewed_byTousers users?             @relation("moderation_queue_reviewed_byTousers", fields: [reviewed_by], references: [id])
+  moderation_rules                          moderation_rules?  @relation(fields: [triggered_rule_id], references: [id])
+  users_moderation_queue_user_idTousers     users              @relation("moderation_queue_user_idTousers", fields: [user_id], references: [id])
+}
+
+model moderation_rules {
+  id               Int                   @id @default(autoincrement())
+  name             String                @db.VarChar(100)
+  description      String?
+  rule_type        ModerationRuleType
+  severity         ModerationSeverity
+  auto_action      ModerationAction?
+  criteria         Json
+  is_active        Boolean               @default(true)
+  created_at       DateTime              @default(now())
+  updated_by       Int?
+  moderation_queue moderation_queue[]
+  users            users?                @relation(fields: [updated_by], references: [id])
+}
+
+model notifications {
+  id             Int               @id @default(autoincrement())
+  user_id        Int
+  type           NotificationType
+  title          String            @db.VarChar(200)
+  message        String?
+  action_url     String?           @db.VarChar(500)
+  is_read        Boolean           @default(false)
+  is_deleted     Boolean           @default(false)
+  reference_type String?           @db.VarChar(50)
+  reference_id   Int?
+  created_at     DateTime          @default(now())
+  read_at        DateTime?
+  users          users             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model olive_branches {
+  id                                            Int               @id @default(autoincrement())
+  user_id                                       Int
+  seed_value                                    String            @db.VarChar(32)
+  olive_count                                   Int
+  olive_type                                    String            @db.VarChar(20)
+  olive_color                                   String            @db.VarChar(7)
+  branch_color                                  String            @db.VarChar(7)
+  leaf_color                                    String            @db.VarChar(7)
+  count_rarity                                  String            @db.VarChar(20)
+  type_rarity                                   String            @db.VarChar(20)
+  count_rarity_percentage                       Int
+  type_rarity_percentage                        Int
+  svg_cache                                     String?
+  botanical_id                                  String            @unique @db.VarChar(12)
+  is_active                                     Boolean           @default(false)
+  created_at                                    DateTime          @default(now())
+  inventory_items                               inventory_items[]
+  users_olive_branches_user_idTousers           users             @relation("olive_branches_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade)
+  users_users_active_olive_branch_idToolive_branches users[]       @relation("users_active_olive_branch_idToolive_branches")
+}
+
+model payments {
+  id                       Int           @id @default(autoincrement())
+  user_id                  Int
+  stripe_payment_intent_id String?       @unique @db.VarChar(100)
+  amount_cents             Int
+  currency                 String        @default("CAD") @db.VarChar(3)
+  payment_type             PaymentType
+  reference_id             Int?
+  status                   PaymentStatus @default(pending)
+  stripe_metadata          Json?
+  failure_reason           String?
+  created_at               DateTime      @default(now())
+  completed_at             DateTime?
+  trades                   trades?       @relation(fields: [reference_id], references: [id])
+  users                    users         @relation(fields: [user_id], references: [id])
+}
+
+model platform_metrics {
+  id                        Int      @id @default(autoincrement())
+  metric_date               DateTime @db.Date
+  metric_type               String   @db.VarChar(50)
+  total_users               Int      @default(0)
+  active_users              Int      @default(0)
+  new_signups               Int      @default(0)
+  total_trades              Int      @default(0)
+  trade_volume_cents        Int      @default(0)
+  subscription_revenue_cents Int     @default(0)
+  marketplace_fees_cents    Int      @default(0)
+  forum_posts               Int      @default(0)
+  olive_branches_generated  Int      @default(0)
+  created_at                DateTime @default(now())
+
+  @@unique([metric_date, metric_type])
+}
+
+model private_messages {
+  id                                          Int               @id @default(autoincrement())
+  sender_id                                   Int
+  recipient_id                                Int
+  subject                                     String?           @db.VarChar(200)
+  content                                     String
+  is_read                                     Boolean           @default(false)
+  is_deleted_by_sender                        Boolean           @default(false)
+  is_deleted_by_recipient                     Boolean           @default(false)
+  reply_to_id                                 Int?
+  created_at                                  DateTime          @default(now())
+  read_at                                     DateTime?
+  users_private_messages_recipient_idTousers  users             @relation("private_messages_recipient_idTousers", fields: [recipient_id], references: [id])
+  private_messages                            private_messages? @relation("private_messagesToprivate_messages", fields: [reply_to_id], references: [id])
+  other_private_messages                      private_messages[] @relation("private_messagesToprivate_messages")
+  users_private_messages_sender_idTousers     users             @relation("private_messages_sender_idTousers", fields: [sender_id], references: [id])
+}
+
+model rate_limits {
+  id               Int      @id @default(autoincrement())
+  identifier       String   @db.VarChar(100)
+  identifier_type  String   @db.VarChar(20)
+  action           String   @db.VarChar(50)
+  attempts         Int      @default(1)
+  window_start     DateTime
+  window_duration  String
+  is_blocked       Boolean  @default(false)
+  blocked_until    DateTime?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @default(now())
+
+  @@unique([identifier, identifier_type, action, window_start])
+}
+
+model referral_codes {
+  id                    Int         @id @default(autoincrement())
+  user_id               Int
+  code                  String      @unique @db.VarChar(20)
+  max_uses              Int?
+  current_uses          Int         @default(0)
+  referrer_reward_type  RewardType
+  referrer_reward_amount Int
+  referee_reward_type   RewardType
+  referee_reward_amount Int
+  is_active             Boolean     @default(true)
+  expires_at            DateTime?
+  created_at            DateTime    @default(now())
+  users                 users       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  referrals             referrals[]
+}
+
+model referrals {
+  id                                Int           @id @default(autoincrement())
+  referrer_id                       Int
+  referee_id                        Int
+  referral_code_id                  Int
+  signup_completed                  Boolean       @default(false)
+  first_purchase_completed          Boolean       @default(false)
+  referrer_rewarded                 Boolean       @default(false)
+  referee_rewarded                  Boolean       @default(false)
+  created_at                        DateTime      @default(now())
+  converted_at                      DateTime?
+  users_referrals_referee_idTousers users         @relation("referrals_referee_idTousers", fields: [referee_id], references: [id])
+  referral_codes                    referral_codes @relation(fields: [referral_code_id], references: [id])
+  users_referrals_referrer_idTousers users        @relation("referrals_referrer_idTousers", fields: [referrer_id], references: [id])
+}
+
+model seasonal_events {
+  id                         Int                      @id @default(autoincrement())
+  name                       String                   @db.VarChar(100)
+  description                String
+  start_date                 DateTime
+  end_date                   DateTime
+  timezone                   String                   @default("UTC") @db.VarChar(50)
+  event_type                 SeasonalEventType
+  special_mechanics          Json?
+  participation_reward_type  RewardType?
+  participation_reward_amount Int?
+  completion_rewards         Json?
+  theme_colors               Json?
+  banner_image               String?                  @db.VarChar(200)
+  is_active                  Boolean                  @default(true)
+  is_featured                Boolean                  @default(false)
+  created_at                 DateTime                 @default(now())
+  user_event_participation   user_event_participation[]
+}
+
+model site_config {
+  key        String   @id @db.VarChar(100)
+  value      Json
+  description String?
+  updated_by Int?
+  updated_at DateTime @default(now())
+  users      users?   @relation(fields: [updated_by], references: [id])
+}
+
+model subscription_tiers {
+  id                  Int                   @id @default(autoincrement())
+  name                String                @db.VarChar(50)
+  description         String
+  price_monthly_cents Int
+  price_yearly_cents  Int?
+  benefits            Json
+  max_inventory_slots Int                   @default(80)
+  max_trade_offers    Int                   @default(10)
+  api_rate_limit      Int                   @default(1000)
+  early_access        Boolean               @default(false)
+  custom_themes       Boolean               @default(false)
+  advanced_analytics  Boolean               @default(false)
+  priority_support    Boolean               @default(false)
+  is_active           Boolean               @default(true)
+  sort_order          Int                   @default(0)
+  created_at          DateTime              @default(now())
+  early_access_features early_access_features[]
+  user_subscriptions  user_subscriptions[]
+}
+
+model trades {
+  id                                Int            @id @default(autoincrement())
+  seller_id                         Int
+  buyer_id                          Int
+  inventory_item_id                 Int
+  price_cents                       Int
+  currency                          String         @default("USD") @db.VarChar(3)
+  status                            TradeStatus    @default(pending)
+  escrow_payment_id                 String?        @db.VarChar(100)
+  escrow_expires_at                 DateTime
+  auto_release_at                   DateTime?
+  dispute_reason                    String?
+  dispute_evidence                  Json?
+  admin_notes                       String?
+  resolved_by                       Int?
+  created_at                        DateTime       @default(now())
+  confirmed_at                      DateTime?
+  completed_at                      DateTime?
+  cancelled_at                      DateTime?
+  payments                          payments[]
+  users_trades_buyer_idTousers      users          @relation("trades_buyer_idTousers", fields: [buyer_id], references: [id])
+  inventory_items                   inventory_items @relation(fields: [inventory_item_id], references: [id])
+  users_trades_resolved_byTousers   users?         @relation("trades_resolved_byTousers", fields: [resolved_by], references: [id])
+  users_trades_seller_idTousers     users          @relation("trades_seller_idTousers", fields: [seller_id], references: [id])
+  user_reviews                      user_reviews[]
+}
+
+model user_2fa {
+  id                 Int      @id @default(autoincrement())
+  user_id            Int      @unique
+  totp_secret        String?  @db.VarChar(32)
+  sms_enabled        Boolean  @default(false)
+  app_enabled        Boolean  @default(false)
+  backup_codes       Json?
+  backup_codes_used  Int      @default(0)
+  recovery_codes     Json?
+  is_enabled         Boolean  @default(false)
+  last_used          DateTime?
+  created_at         DateTime @default(now())
+  updated_at         DateTime @default(now())
+  users              users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model user_achievements {
+  id                Int          @id @default(autoincrement())
+  user_id           Int
+  achievement_id    Int
+  progress_current  Int          @default(0)
+  progress_required Int
+  is_completed      Boolean      @default(false)
+  completed_at      DateTime?
+  claimed_at        DateTime?
+  progress_data     Json?
+  created_at        DateTime     @default(now())
+  achievements      achievements @relation(fields: [achievement_id], references: [id])
+  users             users        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, achievement_id])
+}
+
+model user_daily_logins {
+  id             Int        @id @default(autoincrement())
+  user_id        Int
+  login_date     DateTime   @db.Date
+  current_streak Int        @default(1)
+  longest_streak Int        @default(1)
+  reward_claimed Boolean    @default(false)
+  reward_type    RewardType?
+  reward_amount  Int?
+  created_at     DateTime   @default(now())
+  users          users      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, login_date])
+}
+
+model user_early_access {
+  id                                         Int                 @id @default(autoincrement())
+  user_id                                    Int
+  feature_id                                 Int
+  granted_by                                 Int?
+  access_reason                              String?
+  created_at                                 DateTime            @default(now())
+  early_access_features                      early_access_features @relation(fields: [feature_id], references: [id])
+  users_user_early_access_granted_byTousers users?              @relation("user_early_access_granted_byTousers", fields: [granted_by], references: [id])
+  users_user_early_access_user_idTousers    users               @relation("user_early_access_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, feature_id])
+}
+
+model user_event_participation {
+  id                 Int             @id @default(autoincrement())
+  user_id            Int
+  event_id           Int
+  progress_current   Int             @default(0)
+  progress_target    Int
+  is_completed       Boolean         @default(false)
+  rewards_claimed    Json            @default("[]")
+  total_rewards_value Int            @default(0)
+  participation_data Json?
+  created_at         DateTime        @default(now())
+  completed_at       DateTime?
+  seasonal_events    seasonal_events @relation(fields: [event_id], references: [id])
+  users              users           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, event_id])
+}
+
+model user_follows {
+  id                                        Int     @id @default(autoincrement())
+  follower_id                               Int
+  following_id                              Int
+  is_mutual                                 Boolean @default(false)
+  notification_enabled                      Boolean @default(true)
+  created_at                                DateTime @default(now())
+  users_user_follows_follower_idTousers     users   @relation("user_follows_follower_idTousers", fields: [follower_id], references: [id], onDelete: Cascade)
+  users_user_follows_following_idTousers    users   @relation("user_follows_following_idTousers", fields: [following_id], references: [id], onDelete: Cascade)
+
+  @@unique([follower_id, following_id])
+}
+
+model user_reviews {
+  id                                      Int       @id @default(autoincrement())
+  reviewer_id                             Int
+  reviewed_id                             Int
+  rating                                  Int       @db.SmallInt
+  title                                   String?   @db.VarChar(100)
+  comment                                 String?
+  trade_id                                Int?
+  transaction_type                        String?   @db.VarChar(50)
+  is_public                               Boolean   @default(true)
+  is_verified                             Boolean   @default(false)
+  created_at                              DateTime  @default(now())
+  updated_at                              DateTime  @default(now())
+  users_user_reviews_reviewed_idTousers   users     @relation("user_reviews_reviewed_idTousers", fields: [reviewed_id], references: [id])
+  users_user_reviews_reviewer_idTousers   users     @relation("user_reviews_reviewer_idTousers", fields: [reviewer_id], references: [id])
+  trades                                  trades?   @relation(fields: [trade_id], references: [id])
+
+  @@unique([reviewer_id, reviewed_id, trade_id])
+}
+
+model user_sessions {
+  id            Int      @id @default(autoincrement())
+  user_id       Int
+  token_hash    String   @unique @db.VarChar(255)
+  expires_at    DateTime
+  user_agent    String?
+  ip_address    String?
+  is_active     Boolean  @default(true)
+  last_activity DateTime @default(now())
+  created_at    DateTime @default(now())
+  users         users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model user_subscriptions {
+  id                    Int                @id @default(autoincrement())
+  user_id               Int
+  tier_id               Int
+  stripe_subscription_id String?           @unique @db.VarChar(100)
+  status                SubscriptionStatus
+  billing_cycle         SubscriptionCycle
+  current_period_start  DateTime
+  current_period_end    DateTime
+  last_payment_date     DateTime?
+  next_payment_date     DateTime?
+  cancelled_at          DateTime?
+  cancel_at_period_end  Boolean            @default(false)
+  created_at            DateTime           @default(now())
+  updated_at            DateTime           @default(now())
+  subscription_tiers    subscription_tiers @relation(fields: [tier_id], references: [id])
+  users                 users              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model user_themes {
+  id         Int      @id @default(autoincrement())
+  user_id    Int
+  name       String   @db.VarChar(50)
+  theme_data Json
+  is_active  Boolean  @default(false)
+  is_public  Boolean  @default(false)
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now())
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+// ================================
+// PHASE 4: E-COMMERCE MODELS
+// ================================
+
+model store_categories {
+  id            Int           @id @default(autoincrement())
+  name          String        @db.VarChar(100)
+  slug          String        @unique @db.VarChar(120)
+  description   String?
+  parent_id     Int?
+  item_type     StoreItemType @default(physical)
+  display_order Int           @default(0)
+  is_active     Boolean       @default(true)
+  created_at    DateTime      @default(now())
+  updated_at    DateTime      @default(now())
+
+  // Self-referential relation for subcategories
+  parent_category  store_categories? @relation("CategoryHierarchy", fields: [parent_id], references: [id])
+  child_categories store_categories[] @relation("CategoryHierarchy")
+
+  // Relations
+  store_items store_items[]
+}
+
+model store_items {
+  id                     Int                    @id @default(autoincrement())
+  name                   String                 @db.VarChar(200)
+  slug                   String                 @unique @db.VarChar(220)
+  description            String?
+  short_description      String?                @db.VarChar(500)
+  category_id            Int
+  item_type              StoreItemType
+
+  // Pricing (in cents, CAD)
+  price_cents            Int
+  compare_at_price_cents Int?
+
+  // Physical item fields
+  weight_grams           Int?
+  requires_shipping      Boolean                @default(true)
+
+  // Digital item fields
+  download_url           String?                @db.VarChar(500)
+  download_limit         Int?
+  access_duration_days   Int?
+
+  // Inventory
+  manage_inventory       Boolean                @default(false)
+  stock_quantity         Int                    @default(0)
+  low_stock_threshold    Int?                   @default(10)
+  allow_backorder        Boolean                @default(false)
+
+  // SEO & Display
+  meta_title             String?                @db.VarChar(200)
+  meta_description       String?                @db.VarChar(300)
+  images                 Json?
+  featured_image         String?                @db.VarChar(500)
+
+  // Status
+  is_active              Boolean                @default(true)
+  is_featured            Boolean                @default(false)
+  published_at           DateTime?
+
+  // Timestamps
+  created_at             DateTime               @default(now())
+  updated_at             DateTime               @default(now())
+
+  // Relations
+  category               store_categories       @relation(fields: [category_id], references: [id])
+  variants               store_item_variants[]
+  order_items            order_items[]
+  cart_items             cart_items[]
+  coupons                coupon_items[]
+}
+
+model store_item_variants {
+  id             Int      @id @default(autoincrement())
+  item_id        Int
+  name           String   @db.VarChar(100)
+  sku            String?  @unique @db.VarChar(100)
+
+  // Variant-specific pricing (optional override)
+  price_cents    Int?
+
+  // Variant options (JSON structure)
+  options        Json
+
+  // Inventory for this variant
+  stock_quantity Int      @default(0)
+
+  // Physical properties
+  weight_grams   Int?
+
+  // Status
+  is_active      Boolean  @default(true)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @default(now())
+
+  // Relations
+  store_item     store_items    @relation(fields: [item_id], references: [id], onDelete: Cascade)
+  order_items    order_items[]
+  cart_items     cart_items[]
+
+  @@unique([item_id, name])
+}
+
+model coupons {
+  id                       Int           @id @default(autoincrement())
+  code                     String        @unique @db.VarChar(50)
+  name                     String        @db.VarChar(100)
+  description              String?
+
+  // Discount configuration
+  discount_type            DiscountType
+  discount_value           Int
+
+  // Usage limits
+  usage_limit              Int?
+  usage_limit_per_customer Int?
+  current_uses             Int           @default(0)
+
+  // Conditions
+  minimum_amount_cents     Int?
+  maximum_discount_cents   Int?
+
+  // Validity
+  starts_at                DateTime?
+  expires_at               DateTime?
+  is_active                Boolean       @default(true)
+
+  // Timestamps
+  created_at               DateTime      @default(now())
+  updated_at               DateTime      @default(now())
+  created_by               Int
+
+  // Relations
+  admin                    users         @relation(fields: [created_by], references: [id])
+  orders                   orders[]
+  applicable_items         coupon_items[]
+  usage_log                coupon_usage[]
+}
+
+model coupon_items {
+  id        Int         @id @default(autoincrement())
+  coupon_id Int
+  item_id   Int
+
+  coupon    coupons     @relation(fields: [coupon_id], references: [id], onDelete: Cascade)
+  item      store_items @relation(fields: [item_id], references: [id], onDelete: Cascade)
+
+  @@unique([coupon_id, item_id])
+}
+
+model coupon_usage {
+  id        Int      @id @default(autoincrement())
+  coupon_id Int
+  user_id   Int
+  order_id  Int
+  used_at   DateTime @default(now())
+
+  coupon    coupons  @relation(fields: [coupon_id], references: [id])
+  user      users    @relation(fields: [user_id], references: [id])
+  order     orders   @relation(fields: [order_id], references: [id])
+}
+
+model cart_items {
+  id               Int                  @id @default(autoincrement())
+  user_id          Int
+  item_id          Int
+  variant_id       Int?
+  quantity         Int                  @default(1)
+
+  // Store price at time of adding
+  unit_price_cents Int
+
+  created_at       DateTime             @default(now())
+  updated_at       DateTime             @default(now())
+
+  // Relations
+  user             users                @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  item             store_items          @relation(fields: [item_id], references: [id])
+  variant          store_item_variants? @relation(fields: [variant_id], references: [id])
+
+  @@unique([user_id, item_id, variant_id])
+}
+
+model orders {
+  id                     Int                    @id @default(autoincrement())
+  order_number           String                 @unique @db.VarChar(20)
+  user_id                Int
+
+  // Order totals (all in cents, CAD)
+  subtotal_cents         Int
+  tax_cents              Int                    @default(0)
+  shipping_cents         Int                    @default(0)
+  discount_cents         Int                    @default(0)
+  total_cents            Int
+
+  // Coupon information
+  coupon_id              Int?
+  coupon_code            String?                @db.VarChar(50)
+
+  // Status tracking
+  status                 OrderStatus            @default(pending)
+  payment_status         PaymentStatus          @default(pending)
+  fulfillment_status     FulfillmentStatus      @default(unfulfilled)
+
+  // Shipping information
+  shipping_address       Json?
+  billing_address        Json?
+  shipping_method        String?                @db.VarChar(100)
+  tracking_number        String?                @db.VarChar(100)
+  tracking_url           String?                @db.VarChar(500)
+
+  // Payment information
+  stripe_payment_intent_id String?              @unique @db.VarChar(100)
+  stripe_customer_id     String?                @db.VarChar(100)
+
+  // Notes and metadata
+  customer_notes         String?
+  admin_notes            String?
+  order_metadata         Json?
+
+  // Timestamps
+  created_at             DateTime               @default(now())
+  updated_at             DateTime               @default(now())
+  shipped_at             DateTime?
+  delivered_at           DateTime?
+  cancelled_at           DateTime?
+
+  // Relations
+  user                   users                  @relation(fields: [user_id], references: [id])
+  coupon                 coupons?               @relation(fields: [coupon_id], references: [id])
+  order_items            order_items[]
+  order_status_history   order_status_history[]
+  coupon_usage           coupon_usage[]
+
+  @@index([order_number])
+  @@index([user_id, status])
+  @@index([created_at])
+}
+
+model order_items {
+  id                   Int                  @id @default(autoincrement())
+  order_id             Int
+  item_id              Int
+  variant_id           Int?
+
+  quantity             Int
+  unit_price_cents     Int
+  total_price_cents    Int
+
+  // Product snapshot
+  item_name            String               @db.VarChar(200)
+  item_sku             String?              @db.VarChar(100)
+  variant_name         String?              @db.VarChar(100)
+  product_snapshot     Json?
+
+  // Digital delivery status
+  is_digital           Boolean              @default(false)
+  download_url         String?              @db.VarChar(500)
+  downloads_remaining  Int?
+  access_expires_at    DateTime?
+  delivered_at         DateTime?
+
+  created_at           DateTime             @default(now())
+
+  // Relations
+  order                orders               @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  item                 store_items          @relation(fields: [item_id], references: [id])
+  variant              store_item_variants? @relation(fields: [variant_id], references: [id])
+}
+
+model order_status_history {
+  id          Int      @id @default(autoincrement())
+  order_id    Int
+
+  from_status String?  @db.VarChar(50)
+  to_status   String   @db.VarChar(50)
+  notes       String?
+
+  created_by  Int?
+  created_at  DateTime @default(now())
+
+  // Relations
+  order       orders   @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  user        users?   @relation(fields: [created_by], references: [id])
+}
+
+model users {
+  id                                                        Int                        @id @default(autoincrement())
+  username                                                  String                     @unique @db.VarChar(20)
+  email                                                     String                     @unique @db.VarChar(254)
+  password_hash                                             String                     @db.VarChar(255)
+  phone                                                     String?                    @db.VarChar(20)
+  role                                                      UserRole                   @default(operative)
+  bio                                                       String?
+  onset_date                                                DateTime                   @default(now()) @db.Date
+  id_no                                                     String                     @unique @db.VarChar(6)
+  birthday                                                  DateTime?                  @db.Date
+  country                                                   String?                    @db.VarChar(100)
+  city                                                      String?                    @db.VarChar(100)
+  email_verified                                            Boolean                    @default(false)
+  phone_verified                                            Boolean                    @default(false)
+  email_verification_token                                  String?                    @db.VarChar(32)
+  phone_verification_code                                   String?                    @db.VarChar(6)
+  verification_expires_at                                   DateTime?
+  last_username_change                                      DateTime?
+  failed_login_attempts                                     Int                        @default(0)
+  locked_until                                              DateTime?
+  active_olive_branch_id                                    Int?
+  stripe_customer_id                                        String?                    @db.VarChar(100) // NEW: Stripe customer ID
+  created_at                                                DateTime                   @default(now())
+  updated_at                                                DateTime                   @default(now())
+  last_login                                                DateTime?
+
+  // Existing relations
+  account_recovery                                          account_recovery[]
+  activity_comments                                         activity_comments[]
+  activity_feed                                             activity_feed[]
+  activity_likes                                            activity_likes[]
+  admin_logs                                                admin_logs[]
+  analytics_events                                          analytics_events[]
+  analytics_user_metrics                                    analytics_user_metrics[]
+  forum_posts_forum_posts_author_idTousers                  forum_posts[]              @relation("forum_posts_author_idTousers")
+  forum_posts_forum_posts_edited_byTousers                  forum_posts[]              @relation("forum_posts_edited_byTousers")
+  forum_threads_forum_threads_author_idTousers              forum_threads[]            @relation("forum_threads_author_idTousers")
+  forum_threads_forum_threads_last_reply_byTousers          forum_threads[]            @relation("forum_threads_last_reply_byTousers")
+  inventory_items                                           inventory_items[]
+  ip_blocks                                                 ip_blocks[]
+  leaderboard_entries                                       leaderboard_entries[]
+  moderation_queue_moderation_queue_reviewed_byTousers      moderation_queue[]         @relation("moderation_queue_reviewed_byTousers")
+  moderation_queue_moderation_queue_user_idTousers          moderation_queue[]         @relation("moderation_queue_user_idTousers")
+  moderation_rules                                          moderation_rules[]
+  notifications                                             notifications[]
+  olive_branches_olive_branches_user_idTousers              olive_branches[]           @relation("olive_branches_user_idTousers")
+  payments                                                  payments[]
+  private_messages_private_messages_recipient_idTousers     private_messages[]         @relation("private_messages_recipient_idTousers")
+  private_messages_private_messages_sender_idTousers        private_messages[]         @relation("private_messages_sender_idTousers")
+  referral_codes                                            referral_codes[]
+  referrals_referrals_referee_idTousers                     referrals[]                @relation("referrals_referee_idTousers")
+  referrals_referrals_referrer_idTousers                    referrals[]                @relation("referrals_referrer_idTousers")
+  site_config                                               site_config[]
+  trades_trades_buyer_idTousers                             trades[]                   @relation("trades_buyer_idTousers")
+  trades_trades_resolved_byTousers                          trades[]                   @relation("trades_resolved_byTousers")
+  trades_trades_seller_idTousers                            trades[]                   @relation("trades_seller_idTousers")
+  user_2fa                                                  user_2fa?
+  user_achievements                                         user_achievements[]
+  user_daily_logins                                         user_daily_logins[]
+  user_early_access_user_early_access_granted_byTousers     user_early_access[]        @relation("user_early_access_granted_byTousers")
+  user_early_access_user_early_access_user_idTousers        user_early_access[]        @relation("user_early_access_user_idTousers")
+  user_event_participation                                  user_event_participation[]
+  user_follows_user_follows_follower_idTousers              user_follows[]             @relation("user_follows_follower_idTousers")
+  user_follows_user_follows_following_idTousers             user_follows[]             @relation("user_follows_following_idTousers")
+  user_reviews_user_reviews_reviewed_idTousers              user_reviews[]             @relation("user_reviews_reviewed_idTousers")
+  user_reviews_user_reviews_reviewer_idTousers              user_reviews[]             @relation("user_reviews_reviewer_idTousers")
+  user_sessions                                             user_sessions[]
+  user_subscriptions                                        user_subscriptions[]
+  user_themes                                               user_themes[]
+  olive_branches_users_active_olive_branch_idToolive_branches olive_branches?          @relation("users_active_olive_branch_idToolive_branches", fields: [active_olive_branch_id], references: [id])
+
+  // NEW PHASE 4 E-COMMERCE RELATIONS
+  cart_items           cart_items[]
+  orders               orders[]
+  coupon_usage         coupon_usage[]
+  coupons              coupons[]
+  order_status_history order_status_history[]
+}
+
+// ================================
+// EXISTING ENUMS (Updated)
+// ================================
+
+enum AchievementCategory {
+  collector
+  trader
+  social
+  seasonal
+  special
+}
+
+enum ActivityType {
+  branch_generated
+  rare_branch_found
+  trade_completed
+  achievement_unlocked
+  milestone_reached
+  level_up
+  collection_goal_completed
+  seasonal_event_participated
+  referred_friend
+  forum_post_featured
+}
+
+enum BlockType {
+  temporary
+  permanent
+  rate_limit
+  suspicious_activity
+}
+
+enum ItemType {
+  seed
+  branch
+  physical
+}
+
+enum LeaderboardCategory {
+  collector
+  trader
+  social
+  forum
+  seasonal
+}
+
+enum LeaderboardPeriod {
+  daily
+  weekly
+  monthly
+  all_time
+  seasonal
+}
+
+enum ModerationAction {
+  flag
+  hide
+  delete
+  warn_user
+  suspend_user
+  ban_user
+}
+
+enum ModerationRuleType {
+  keyword_filter
+  regex_pattern
+  ml_classifier
+  user_report_threshold
+}
+
+enum ModerationSeverity {
+  low
+  medium
+  high
+  critical
+}
+
+enum ModerationStatus {
+  pending
+  approved
+  rejected
+  escalated
+}
+
+enum NotificationType {
+  trade_offer
+  trade_confirmed
+  trade_completed
+  trade_disputed
+  payment_received
+  payment_failed
+  message_received
+  forum_reply
+  forum_mention
+  account_verification
+  security_alert
+  admin_announcement
+}
+
+enum PaymentStatus {
+  pending
+  succeeded
+  failed
+  cancelled
+  refunded
+}
+
+enum PaymentType {
+  seed_purchase
+  subscription
+  trade_escrow
+  physical_item
+  store_purchase      // NEW
+  subscription_donation // NEW
+}
+
+enum RecoveryMethodType {
+  sms
+  security_questions
+  admin_review
+}
+
+enum RewardType {
+  seeds
+  points
+  badge_only
+  early_access
+}
+
+enum SeasonalEventType {
+  breeding_bonus
+  rare_boost
+  trading_festival
+  community_challenge
+}
+
+enum SubscriptionCycle {
+  monthly
+  yearly
+}
+
+enum SubscriptionStatus {
+  active
+  past_due
+  cancelled
+  unpaid
+  incomplete
+}
+
+enum TradeStatus {
+  pending
+  confirmed
+  shipping
+  disputed
+  completed
+  cancelled
+  refunded
+}
+
+enum UserRole {
+  guest
+  operative
+  contributor
+  beta_tester @map("beta-tester")
+  moderator
+  admin
+}
+
+// ================================
+// NEW PHASE 4 E-COMMERCE ENUMS
+// ================================
+
+enum StoreItemType {
+  physical
+  digital
+}
+
+enum DiscountType {
+  percentage
+  fixed_amount
+  free_shipping
+}
+
+enum OrderStatus {
+  pending
+  confirmed
+  processing
+  shipped       // Physical items
+  delivered     // Both physical and digital
+  cancelled
+  refunded
+}
+
+enum FulfillmentStatus {
+  unfulfilled
+  partial
+  fulfilled
+  returned
+}

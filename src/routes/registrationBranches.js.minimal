@@ -1,0 +1,39 @@
+// src/routes/registrationBranches.js
+const express = require('express');
+const { requireAuth } = require('../middleware/auth');
+const router = express.Router();
+
+console.log('🔵 Registration routes file loaded successfully!');
+
+// Test endpoint
+router.get('/test', (req, res) => {
+  console.log('🟢 Registration test endpoint hit!');
+  res.json({ 
+    message: 'Registration routes are working!', 
+    timestamp: new Date().toISOString() 
+  });
+});
+
+// Test auth endpoint
+router.get('/test-auth', requireAuth, (req, res) => {
+  console.log('🟢 Auth test endpoint hit for user:', req.user.id);
+  res.json({ 
+    message: 'Auth is working', 
+    user: req.user,
+    timestamp: new Date() 
+  });
+});
+
+// Simplified confirm endpoint (we'll add the full logic back once this works)
+router.post('/confirm-starter-branch', requireAuth, (req, res) => {
+  console.log('🟢 Confirm endpoint hit for user:', req.user.id);
+  
+  res.json({
+    success: true,
+    message: 'Registration endpoint working - ready for full implementation',
+    userId: req.user.id,
+    timestamp: new Date().toISOString()
+  });
+});
+
+module.exports = router;
